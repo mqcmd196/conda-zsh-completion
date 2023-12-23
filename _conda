@@ -209,29 +209,6 @@ __conda_packages_installed(){
     _describe -t installed_packages "installed packages$additional_message" installed_packages
 }
 
-__conda_package_available(){
-    zstyle ":completion:${curcontext}:" cache-policy __conda_caching_policy
-    local -a available_packages
-    if _cache_invalid conda_available_packages || ! _retrieve_cache conda_available_packages ; then
-        available_packages=($(conda search --use-index-cache --json |
-        python -c "
-import json, sys
-parsed = json.load(sys.stdin)
-for k in parsed.keys():
-    print(k)
-        "))
-        _store_cache conda_available_packages available_packages
-    fi
-    print -l $available_packages
-
-}
-
-__describe_conda_package_available(){
-    local -a available_packages
-    available_packages=($( __conda_package_available))
-    _describe -t available_packages 'available packages' available_packages
-}
-
 __conda_existing_config_keys(){
     local -a config_keys
     config_keys=($(conda config --json --get |
@@ -357,21 +334,6 @@ __conda_describe_package_specs(){
     _describe -t __conda_package_specs 'conda package specs' __conda_package_specs
 }
 
-__conda_describe_package_version(){
-    local -a current_package versions
-    current_package="$1"
-    versions=($( conda search --json --use-index-cache $current_package | python -c "
-import json,sys
-try:
-    versions = set((e['version'] for e in json.load(sys.stdin)['$current_package']))
-    for v in versions:
-        print(v)
-except KeyError:
-    pass
-    "))
-    _describe -t versions "$current_package version" versions
-}
-
 __conda_commands(){
     local -a package maint environment help config special tmp
     package=(
@@ -475,23 +437,6 @@ _arguments -C $opts \
            ': :->command' \
            '*:: :->subcmd'
 
-# the magic function, complete either a package or a package and it's version
-__magic(){
-    local -a last_item available_packages current_package
-    last_item=$line[$CURRENT]
-    available_packages=($( __conda_package_available ))
-    if compset -P "*=" ; then
-        current_package="$IPREFIX[1,-2]"
-        __conda_describe_package_version $current_package
-    else
-        __describe_conda_package_available
-        if [[ -n $last_item ]] && (( ${available_packages[(I)$last_item]} )); then
-            compset -P '*'
-            __conda_describe_package_specs
-        fi
-    fi
-}
-
 case $state in
 (command)
     __conda_commands
@@ -506,7 +451,6 @@ case $state in
                       '(-l --license)'{-l,--license}'[display information about local conda licenses list]' \
                       '(-s --system)'{-s,--system}'[list environment variables]' \
                       '--root[display root environment path]' \
-                      '*:packages:__describe_conda_package_available' \
         ;;
     (help)
         _arguments -C $help_opts \
@@ -544,7 +488,6 @@ case $state in
                       '--unknown[use index metadata from the local package cache]' \
                       '--clone[path to (or name of) existing local environment]' \
                       '--no-default-packages[ignore create_default_packages in condarc file]' \
-                      '*:packages:__magic' \
         ;;
     (install)
         _arguments -C $help_opts \
@@ -553,7 +496,6 @@ case $state in
                     $json_opts \
                     $channel_opts \
                     '--revision[revert to the specified revision]:revision' \
-                    '*:packages:__magic' \
         ;;
     (update)
         local -a environment options specifier
